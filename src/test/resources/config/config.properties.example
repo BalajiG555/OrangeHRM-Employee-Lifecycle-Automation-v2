@@ -1,0 +1,19 @@
+# Copy to src/test/resources/config/config.properties (git-ignored) for local runs.
+# In CI these come from GitHub secrets as ORANGEHRM_USERNAME / ORANGEHRM_PASSWORD.
+
+username=
+password=
+
+# Optional overrides for local experiments, e.g.:
+# browser=firefox
+# headless=true
+# parallel.threads=2
+# grid.url=http://localhost:4444
+
+# Optional: only needed when api.auth.mode=oauth
+# api.access.token=
+# api.client.id=
+# api.client.secret=
+# api.redirect.uri=
+# api.authorization.code=
+# api.code.verifier=

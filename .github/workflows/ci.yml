@@ -1,0 +1,297 @@
+name: OrangeHRM E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 2 * * 1-5"   # nightly regression, Mon-Fri 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: qa
+        type: choice
+        options: [dev, qa, prod]
+      test_suite:
+        description: Test suite (tag)
+        required: true
+        default: regression
+        type: choice
+        options: [smoke, regression]
+      browser:
+        description: Browser
+        required: true
+        default: chrome
+        type: choice
+        options: [chrome, firefox, edge]
+      threads:
+        description: Parallel threads per shard (empty = environment default)
+        required: false
+        default: ""
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TEST_ENV: ${{ inputs.environment || 'qa' }}
+  TEST_SUITE: ${{ inputs.test_suite || 'regression' }}
+  BROWSER: ${{ inputs.browser || 'chrome' }}
+  THREADS: ${{ inputs.threads }}
+  JAVA_VERSION: "21"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Compile + framework unit tests + coding standards (Checkstyle)
+  #    + static bug analysis (SpotBugs). Fast feedback before any browser starts.
+  # ---------------------------------------------------------------------------
+  quality:
+    name: Build & static analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Compile, framework unit tests, Checkstyle, SpotBugs
+        run: mvn -B -ntp verify -Dtestng.suite=testng-unit.xml
+
+      - name: Upload static-analysis reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-analysis-reports
+          path: |
+            target/checkstyle-result.xml
+            target/spotbugsXml.xml
+            target/surefire-reports
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # 2. E2E tests - sharded across parallel jobs; each shard also runs
+  #    scenarios in parallel threads inside the JVM (parallel.threads).
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: E2E - ${{ matrix.shard }}
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment || 'qa' }}
+    permissions:
+      contents: read
+      checks: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: auth
+            tags: "@auth"
+          - shard: employee-ui
+            tags: "@employee and not @api"
+          - shard: employee-api
+            tags: "@api"
+          - shard: rbac
+            tags: "@rbac"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Ensure ffmpeg (MP4 failure videos)
+        run: command -v ffmpeg || (sudo apt-get update -q && sudo apt-get install -y -q ffmpeg)
+
+      - name: Build tag expression
+        id: tags
+        env:
+          SHARD_TAGS: ${{ matrix.tags }}
+        run: |
+          expression="(${SHARD_TAGS}) and @${TEST_SUITE} and not @quarantine and not @wip"
+          if [ "${TEST_ENV}" = "prod" ]; then expression="${expression} and not @destructive"; fi
+          echo "expression=${expression}" >> "$GITHUB_OUTPUT"
+          echo "Tag expression: ${expression}"
+
+      - name: Run tests
+        env:
+          TAG_EXPRESSION: ${{ steps.tags.outputs.expression }}
+          ORANGEHRM_USERNAME: ${{ secrets.ORANGEHRM_USERNAME }}
+          ORANGEHRM_PASSWORD: ${{ secrets.ORANGEHRM_PASSWORD }}
+          # Optional - only used when api.auth.mode=oauth
+          ORANGEHRM_API_AUTH_MODE: ${{ vars.ORANGEHRM_API_AUTH_MODE }}
+          ORANGEHRM_API_ACCESS_TOKEN: ${{ secrets.ORANGEHRM_API_ACCESS_TOKEN }}
+          ORANGEHRM_API_CLIENT_ID: ${{ secrets.ORANGEHRM_API_CLIENT_ID }}
+          ORANGEHRM_API_CLIENT_SECRET: ${{ secrets.ORANGEHRM_API_CLIENT_SECRET }}
+          ORANGEHRM_API_REDIRECT_URI: ${{ secrets.ORANGEHRM_API_REDIRECT_URI }}
+        run: |
+          mvn -B -ntp test \
+            -Denv="${TEST_ENV}" \
+            -Dbrowser="${BROWSER}" \
+            -Dheadless=true \
+            -Dcucumber.filter.tags="${TAG_EXPRESSION}" \
+            -DfailIfNoTests=false \
+            ${THREADS:+-Dparallel.threads=${THREADS}}
+
+      - name: Publish test results to the PR / run
+        if: always()
+        uses: mikepenz/action-junit-report@v5
+        with:
+          report_paths: target/cucumber-reports/cucumber-junit.xml
+          check_name: E2E results (${{ matrix.shard }})
+          require_tests: false
+
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-${{ matrix.shard }}
+          path: target/allure-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload Cucumber HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cucumber-report-${{ matrix.shard }}
+          path: target/cucumber-reports
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload failure evidence (screenshots, videos, logs, flaky report)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-${{ matrix.shard }}
+          path: |
+            target/test-artifacts
+            target/logs
+            target/flaky-report
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # 3. Quarantine lane - known-flaky scenarios (@quarantine) keep running
+  #    for visibility but never block the pipeline.
+  # ---------------------------------------------------------------------------
+  quarantine:
+    name: Quarantined scenarios (non-blocking)
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    environment: ${{ inputs.environment || 'qa' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      - name: Run quarantined scenarios
+        env:
+          ORANGEHRM_USERNAME: ${{ secrets.ORANGEHRM_USERNAME }}
+          ORANGEHRM_PASSWORD: ${{ secrets.ORANGEHRM_PASSWORD }}
+        run: mvn -B -ntp test -Denv="${TEST_ENV}" -Dheadless=true -Dcucumber.filter.tags="@quarantine" -DfailIfNoTests=false
+      - name: Upload quarantine results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quarantine-results
+          path: target/cucumber-reports
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # 4. Merge shard results into ONE Allure HTML report (with history/trends),
+  #    publish it as an artifact and to GitHub Pages.
+  # ---------------------------------------------------------------------------
+  report:
+    name: Allure report
+    needs: e2e
+    if: always() && needs.e2e.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PAGES_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download all shard results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: allure-results-*
+          path: allure-results
+          merge-multiple: true
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Allure CLI
+        run: npm install -g allure-commandline@2.46.1
+
+      - name: Restore report history (trends)
+        continue-on-error: true
+        run: |
+          mkdir -p allure-results/history
+          for f in history.json history-trend.json duration-trend.json categories-trend.json retry-trend.json; do
+            curl -sfL "${PAGES_URL}/history/${f}" -o "allure-results/history/${f}" || true
+          done
+
+      - name: Generate Allure HTML report
+        run: allure generate allure-results -o allure-report --clean
+
+      - name: Write run summary (fails if the whole pipeline executed zero scenarios)
+        run: python3 scripts/allure_summary.py allure-report --fail-if-empty >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Allure HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: allure-report
+          retention-days: 30
+
+      - name: Package report for GitHub Pages
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: allure-report
+
+  deploy-report:
+    name: Publish report to GitHub Pages
+    needs: report
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # Requires Settings > Pages > Source = "GitHub Actions". Non-blocking so a Pages outage
+    # never fails an otherwise green test run.
+    continue-on-error: true
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

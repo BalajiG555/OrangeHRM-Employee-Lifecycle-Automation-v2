@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Patterns excluded deliberately (with reasons). -->
+<FindBugsFilter>
+    <!-- Page objects / services intentionally share collaborators (WebDriver, clients) by reference. -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Cucumber/PicoContainer and TestNG instantiate glue and listeners reflectively. -->
+    <Match>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+    <!-- Flaky-test bookkeeping uses static concurrent maps by design (one report per JVM). -->
+    <Match>
+        <Class name="com.framework.listeners.FlakyTestListener"/>
+        <Bug pattern="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD"/>
+    </Match>
+</FindBugsFilter>

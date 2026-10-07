@@ -1,0 +1,41 @@
+# Local Selenium Grid 4 (4.49 - newest published images; compatible with the 4.50 client) for cross-browser / scaled execution.
+#   docker compose up -d
+#   mvn clean test -Dgrid.url=http://localhost:4444 -Dbrowser=firefox -Dparallel.threads=4
+#   Grid console: http://localhost:4444/ui
+services:
+  selenium-hub:
+    image: selenium/hub:4.49.0-20260909
+    ports:
+      - "4442:4442"
+      - "4443:4443"
+      - "4444:4444"
+
+  chrome:
+    image: selenium/node-chrome:4.49.0-20260909
+    shm_size: 2gb
+    depends_on:
+      - selenium-hub
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_NODE_MAX_SESSIONS=4
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+
+  firefox:
+    image: selenium/node-firefox:4.49.0-20260909
+    shm_size: 2gb
+    depends_on:
+      - selenium-hub
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_NODE_MAX_SESSIONS=4
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+
+  edge:
+    image: selenium/node-edge:4.49.0-20260909
+    shm_size: 2gb
+    depends_on:
+      - selenium-hub
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_NODE_MAX_SESSIONS=4
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true

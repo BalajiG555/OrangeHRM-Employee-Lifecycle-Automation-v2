@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+
+<!--
+  Listeners MUST be registered here: TestNG ignores IAnnotationTransformer (retry) and
+  IAlterSuiteListener (thread count) when they are declared through @Listeners.
+  Scenario parallelism comes from the runner's parallel DataProvider; the thread count is set at
+  runtime from the 'parallel.threads' configuration key.
+-->
+<suite name="OrangeHRM Employee Lifecycle Suite" verbose="1">
+
+    <listeners>
+        <listener class-name="com.framework.listeners.ParallelExecutionListener"/>
+        <listener class-name="com.framework.listeners.RetryListener"/>
+        <listener class-name="com.framework.listeners.FlakyTestListener"/>
+        <listener class-name="com.framework.listeners.ReportEnvironmentListener"/>
+    </listeners>
+
+    <test name="Employee Lifecycle">
+        <classes>
+            <class name="com.orangehrm.runners.TestRunner"/>
+        </classes>
+    </test>
+</suite>

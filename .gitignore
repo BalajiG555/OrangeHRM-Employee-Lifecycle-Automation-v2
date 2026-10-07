@@ -1,0 +1,33 @@
+# Maven / build
+target/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Allure (results are generated under target/allure-results)
+allure-results/
+allure-report/
+.allure/
+
+# Logs
+*.log
+
+# Local secrets - never commit
+src/test/resources/config/config.properties
+.env
+*.secret
+secrets.properties
+
+# Temporary files
+temp/
+tmp/

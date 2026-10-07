@@ -1,0 +1,36 @@
+[
+  {
+    "name": "Flaky - passed after retry",
+    "matchedStatuses": ["passed"],
+    "flaky": true
+  },
+  {
+    "name": "Skipped by environment guard",
+    "matchedStatuses": ["skipped"],
+    "messageRegex": ".*(tests.destructive.enabled|api.validation.enabled).*"
+  },
+  {
+    "name": "Configuration problems",
+    "matchedStatuses": ["broken", "failed"],
+    "traceRegex": ".*ConfigurationException.*"
+  },
+  {
+    "name": "Backend API failures",
+    "matchedStatuses": ["broken", "failed"],
+    "traceRegex": ".*ApiException.*"
+  },
+  {
+    "name": "Synchronisation / timeouts (investigate for flakiness)",
+    "matchedStatuses": ["broken", "failed"],
+    "traceRegex": ".*TimeoutException.*"
+  },
+  {
+    "name": "Product defects (assertion failures)",
+    "matchedStatuses": ["failed"],
+    "traceRegex": ".*AssertionError.*"
+  },
+  {
+    "name": "Test defects (unexpected errors)",
+    "matchedStatuses": ["broken"]
+  }
+]

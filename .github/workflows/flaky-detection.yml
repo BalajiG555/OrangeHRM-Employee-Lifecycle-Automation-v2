@@ -1,0 +1,88 @@
+name: Flaky test detection
+
+# Re-runs the regression suite N times WITHOUT retries and compares outcomes per scenario.
+# A scenario that both passed and failed across identical runs is flaky by definition.
+on:
+  schedule:
+    - cron: "0 4 * * 6"   # weekly, Saturday 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        default: qa
+        type: choice
+        options: [dev, qa]
+      iterations:
+        description: Number of repeated runs
+        default: "5"
+
+permissions:
+  contents: read
+
+env:
+  TEST_ENV: ${{ inputs.environment || 'qa' }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      runs: ${{ steps.plan.outputs.runs }}
+    steps:
+      - id: plan
+        env:
+          ITERATIONS: ${{ inputs.iterations || '5' }}
+        run: echo "runs=$(python3 -c "import json,os; print(json.dumps(list(range(1, int(os.environ['ITERATIONS']) + 1))))")" >> "$GITHUB_OUTPUT"
+
+  repeat:
+    name: Run ${{ matrix.run }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: ${{ inputs.environment || 'qa' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        run: ${{ fromJSON(needs.plan.outputs.runs) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Run suite with retries disabled
+        continue-on-error: true
+        env:
+          ORANGEHRM_USERNAME: ${{ secrets.ORANGEHRM_USERNAME }}
+          ORANGEHRM_PASSWORD: ${{ secrets.ORANGEHRM_PASSWORD }}
+        run: |
+          mvn -B -ntp test -Denv="${TEST_ENV}" -Dheadless=true -Dretry.max.count=0 -Dvideo.mode=off \
+            -Dcucumber.filter.tags="(@regression or @quarantine) and not @wip"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flaky-run-${{ matrix.run }}
+          path: target/cucumber-reports/cucumber.json
+          if-no-files-found: ignore
+
+  analyse:
+    name: Analyse stability
+    needs: repeat
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: flaky-run-*
+          path: runs
+      - name: Build flakiness report
+        run: |
+          python3 scripts/flaky_report.py runs --markdown flaky-report.md --json flaky-report.json
+          cat flaky-report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flakiness-report
+          path: |
+            flaky-report.md
+            flaky-report.json

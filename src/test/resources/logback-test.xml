@@ -1,0 +1,29 @@
+<configuration>
+    <!-- Thread + scenario name on every line makes parallel logs readable. -->
+    <property name="PATTERN"
+              value="%d{HH:mm:ss.SSS} %-5level [%thread] [%X{scenario:-suite}] %logger{0} - %msg%n"/>
+    <property name="LOG_DIR" value="${log.dir:-target/logs}"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>${LOG_DIR}/test-run.log</file>
+        <append>false</append>
+        <encoder>
+            <pattern>${PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="org.openqa.selenium" level="WARN"/>
+    <logger name="io.netty" level="WARN"/>
+    <logger name="org.apache.http" level="WARN"/>
+
+    <root level="${log.level:-INFO}">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+</configuration>

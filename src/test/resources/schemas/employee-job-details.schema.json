@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "OrangeHRM - GET /api/v2/pim/employees/{empNumber}/job-details",
+  "description": "Unset relations are returned as objects whose fields are null (e.g. {\"id\": null, \"name\": null}), not as null.",
+  "type": "object",
+  "required": ["data"],
+  "definitions": {
+    "nullableId": {"type": ["integer", "null"]},
+    "jobTitle": {
+      "type": ["object", "null"],
+      "required": ["id", "title"],
+      "properties": {
+        "id": {"$ref": "#/definitions/nullableId"},
+        "title": {"type": ["string", "null"]},
+        "isDeleted": {"type": ["boolean", "null"]}
+      }
+    },
+    "named": {
+      "type": ["object", "null"],
+      "required": ["id", "name"],
+      "properties": {
+        "id": {"$ref": "#/definitions/nullableId"},
+        "name": {"type": ["string", "null"]}
+      }
+    }
+  },
+  "properties": {
+    "data": {
+      "type": "object",
+      "required": ["empNumber", "jobTitle", "empStatus"],
+      "properties": {
+        "empNumber": {"type": "integer"},
+        "joinedDate": {"type": ["string", "null"]},
+        "jobTitle": {"$ref": "#/definitions/jobTitle"},
+        "empStatus": {"$ref": "#/definitions/named"},
+        "jobCategory": {"$ref": "#/definitions/named"},
+        "subunit": {"$ref": "#/definitions/named"},
+        "location": {"$ref": "#/definitions/named"}
+      }
+    }
+  }
+}
