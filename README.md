@@ -414,7 +414,7 @@ Where the results appear:
 * **Run summary page:** pass/fail counts and the flaky-test table.
 * **Artifacts:** `allure-report`, plus `cucumber-report-*` and `test-evidence-*` (screenshots, videos,
   logs) per shard.
-* **GitHub Pages:** the hosted Allure report at `https://<your-username>.github.io/<repo-name>/`, with
+* **GitHub Pages:** the hosted Allure report at `https://BalajiG555.github.io/OrangeHRM-Employee-Lifecycle-Automation-v2/`, with
   trend history across runs.
 
 If you rename the repository, also update the link patterns in `src/test/resources/allure.properties`.
